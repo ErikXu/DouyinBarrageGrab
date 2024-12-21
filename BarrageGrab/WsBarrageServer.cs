@@ -17,6 +17,7 @@ using BarrageGrab.Modles.JsonEntity;
 using BarrageGrab.Modles.ProtoEntity;
 using System.Drawing;
 using System.Collections.Concurrent;
+using System.Net.Sockets;
 
 namespace BarrageGrab
 {
@@ -121,7 +122,7 @@ namespace BarrageGrab
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogWarn("缓存礼物数据到本地失败，"+ex.Message);
+                    Logger.LogWarn("缓存礼物数据到本地失败，" + ex.Message);
                 }
             });
         }
@@ -260,7 +261,7 @@ namespace BarrageGrab
         //附加房间信息
         private void AttachRoomInfo(Msg msg)
         {
-            if(msg==null) return;
+            if (msg == null) return;
             var roomInfo = AppRuntime.RoomCaches.GetCachedWebRoomInfo(msg.RoomId.ToString());
             if (roomInfo != null)
             {
@@ -286,7 +287,7 @@ namespace BarrageGrab
                 MsgId = msg.Common.msgId,
                 Content = msg.Content,
                 RoomId = msg.Common.roomId.ToString(),
-                WebRoomId = AppRuntime.RoomCaches.GetCachedWebRoomid(msg.Common.roomId.ToString()),                
+                WebRoomId = AppRuntime.RoomCaches.GetCachedWebRoomid(msg.Common.roomId.ToString()),
                 Type = msg.Type,
                 User = GetUser(msg.User)
             };
@@ -351,7 +352,7 @@ namespace BarrageGrab
             if (msg.repeatEnd == 1 && giftCountCache.ContainsKey(key))
             {
                 //清除缓存中的key
-                if (msg.groupId > 0 )
+                if (msg.groupId > 0)
                 {
                     Tuple<int, DateTime> _;
                     giftCountCache.TryRemove(key, out _);
@@ -646,6 +647,7 @@ namespace BarrageGrab
         public void Broadcast(BarrageMsgPack pack)
         {
             if (pack == null) return;
+            pack.ToJson();
             if (AppSetting.Current.PushFilter.Any() && !AppSetting.Current.PushFilter.Contains(pack.Type.GetHashCode())) return;
 
             var offLines = new List<string>();
@@ -654,7 +656,7 @@ namespace BarrageGrab
                 var state = item.Value;
                 if (item.Value.Socket.IsAvailable)
                 {
-                    state.Socket.Send(pack.ToJson());
+                    SendMessage(state.Socket, pack.ToJson());
                 }
                 else
                 {
@@ -681,7 +683,25 @@ namespace BarrageGrab
                 throw;
             }
         }
+        private void SendMessage(IWebSocketConnection socket, string message)
+        {
+            // 将消息内容转换为字节数组
+            byte[] messageBytes = Encoding.UTF8.GetBytes(message);
 
+            // 获取消息长度
+            int messageLength = messageBytes.Length;
+
+            // 消息头（4字节表示消息的长度）
+            byte[] lengthHeader = BitConverter.GetBytes(messageLength);
+
+            // 创建消息包：头部 + 内容
+            byte[] packet = new byte[lengthHeader.Length + messageBytes.Length];
+            lengthHeader.CopyTo(packet, 0);
+            messageBytes.CopyTo(packet, lengthHeader.Length);
+
+            // 发送消息
+            socket.Send(packet);
+        }
         /// <summary>
         /// 关闭服务器连接，并关闭系统代理
         /// </summary>
